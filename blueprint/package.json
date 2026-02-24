@@ -1,0 +1,13 @@
+{
+  "name": "purpose-discovery-blueprint",
+  "version": "1.0.0",
+  "description": "Purpose Discovery Blueprint — AI-powered life assignment assessment",
+  "private": true,
+  "engines": {
+    "node": "18.x"
+  },
+  "scripts": {
+    "dev": "vercel dev",
+    "deploy": "vercel --prod"
+  }
+}
