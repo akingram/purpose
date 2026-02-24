@@ -4,7 +4,7 @@
   "description": "Purpose Discovery Blueprint — AI-powered life assignment assessment",
   "private": true,
   "engines": {
-    "node": "18.x"
+    "node": "24.x"
   },
   "scripts": {
     "dev": "vercel dev",
