@@ -883,18 +883,28 @@
 
       clearInterval(interval);
 
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || 'Server error');
+      // Read raw text first so we can debug if it's not JSON
+      const rawText = await response.text();
+      console.log('API raw response:', rawText);
+
+      let result;
+      try {
+        result = JSON.parse(rawText);
+      } catch (parseErr) {
+        console.error('Response was not JSON:', rawText);
+        throw new Error('The server returned an unexpected response. Check that your API key is set in Vercel environment variables and redeploy.');
       }
 
-      const result = await response.json();
+      // If the parsed JSON contains an error field
+      if (result.error) {
+        throw new Error(result.error);
+      }
+
       displayResults(result);
 
     } catch (err) {
       clearInterval(interval);
-      console.error(err);
-      // Show error on loading screen
+      console.error('Analysis error:', err);
       document.querySelector('.loading-title').textContent = 'Something went wrong';
       document.getElementById('loading-status').textContent = err.message || 'Please check your connection and try again.';
       document.getElementById('loading-status').style.color = '#800020';
@@ -902,7 +912,7 @@
         currentStep = TOTAL_STEPS - 1;
         showPhase('phase-assessment');
         updateUI();
-      }, 3000);
+      }, 4000);
     }
   }
 
