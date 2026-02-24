@@ -1,83 +1,83 @@
+export const config = { runtime: "edge" };
 
-const https = require('https');
+export default async function handler(req) {
+  const headers = {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type"
+  };
 
-module.exports = async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers });
   }
 
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+  if (req.method !== "POST") {
+    return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405, headers });
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
+
   if (!apiKey) {
-    return res.status(500).json({ error: 'API key missing on server.' });
+    return new Response(JSON.stringify({ error: "API key not set in Vercel environment variables." }), { status: 500, headers });
   }
 
-  let body = req.body;
-  if (typeof body === 'string') {
-    try { body = JSON.parse(body); }
-    catch (e) { return res.status(400).json({ error: 'Invalid request body.' }); }
+  let body;
+  try {
+    body = await req.json();
+  } catch (e) {
+    return new Response(JSON.stringify({ error: "Invalid request body." }), { status: 400, headers });
   }
 
   const { answers } = body || {};
+
   if (!answers || !Array.isArray(answers) || answers.length !== 5) {
-    return res.status(400).json({ error: 'Need exactly 5 answers.' });
+    return new Response(JSON.stringify({ error: "Need exactly 5 answers." }), { status: 400, headers });
   }
 
-  const payload = JSON.stringify({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 1200,
-    system: 'You are a purpose discovery mentor. Use simple everyday English. Framework: frustration = life assignment, gifts = innate equipment. Do not just summarise. Give real positioning strategy and next steps. Return ONLY raw JSON, no markdown, no backticks: {"coreIdentity":"...","lifeAssignment":"...","positioningStrategy":"...","nextSteps":["...","...","...","...","..."]}',
-    messages: [{ role: 'user', content: 'Frustration: ' + answers[0] + ' Gift: ' + answers[1] + ' Energy: ' + answers[2] + ' Soil: ' + answers[3] + ' Seed: ' + answers[4] }]
-  });
+  const prompt = `Frustration: ${answers[0]}\nGift: ${answers[1]}\nEnergy: ${answers[2]}\nSoil: ${answers[3]}\nSeed: ${answers[4]}`;
 
-  return new Promise((resolve) => {
-    const options = {
-      hostname: 'api.anthropic.com',
-      path: '/v1/messages',
-      method: 'POST',
+  const systemPrompt = `You are a purpose discovery mentor. Use simple everyday English.
+Framework: frustration = life assignment, gifts = innate equipment.
+Do not summarise. Give real positioning strategy and next steps.
+Return ONLY this exact JSON structure with no markdown, no backticks, no extra text:
+{"coreIdentity":"write 2-3 sentences here","lifeAssignment":"write 2-3 sentences here","positioningStrategy":"write 3-4 sentences here","nextSteps":["step 1","step 2","step 3","step 4","step 5"]}`;
+
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'Content-Length': Buffer.byteLength(payload)
-      }
-    };
-
-    const apiReq = https.request(options, (apiRes) => {
-      let data = '';
-      apiRes.on('data', chunk => data += chunk);
-      apiRes.on('end', () => {
-        try {
-          if (apiRes.statusCode !== 200) {
-            res.status(500).json({ error: 'Anthropic error ' + apiRes.statusCode + ': ' + data });
-            return resolve();
-          }
-          const parsed = JSON.parse(data);
-          const raw = parsed.content.map(function(b) { return b.text || ''; }).join('').trim();
-          const clean = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
-          const result = JSON.parse(clean);
-          res.status(200).json(result);
-          resolve();
-        } catch (err) {
-          res.status(500).json({ error: 'Parse error: ' + err.message });
-          resolve();
-        }
-      });
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01"
+      },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 1200,
+        system: systemPrompt,
+        messages: [{ role: "user", content: prompt }]
+      })
     });
 
-    apiReq.on('error', function(err) {
-      res.status(500).json({ error: 'Network error: ' + err.message });
-      resolve();
-    });
+    if (!response.ok) {
+      const errText = await response.text();
+      return new Response(JSON.stringify({ error: "Anthropic API error " + response.status + ": " + errText }), { status: 500, headers });
+    }
 
-    apiReq.write(payload);
-    apiReq.end();
-  });
-};
+    const data = await response.json();
+    const raw = data.content.map(b => b.text || "").join("").trim();
+    const clean = raw.replace(/```json/gi, "").replace(/```/g, "").trim();
+
+    let result;
+    try {
+      result = JSON.parse(clean);
+    } catch (e) {
+      return new Response(JSON.stringify({ error: "Could not parse AI response: " + clean.substring(0, 100) }), { status: 500, headers });
+    }
+
+    return new Response(JSON.stringify(result), { status: 200, headers });
+
+  } catch (err) {
+    return new Response(JSON.stringify({ error: "Server error: " + err.message }), { status: 500, headers });
+  }
+}
