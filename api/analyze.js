@@ -1,46 +1,41 @@
-export const config = { runtime: "edge" };
-
-export default async function handler(req) {
-  const headers = {
-    "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type"
-  };
+module.exports = async function handler(req, res) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
   if (req.method === "OPTIONS") {
-    return new Response("ok", { headers });
+    return res.status(200).end();
   }
 
   if (req.method !== "POST") {
-    return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405, headers });
+    return res.status(405).json({ error: "Method not allowed" });
   }
 
   const apiKey = process.env.GEMINI_API_KEY;
 
   if (!apiKey) {
-    return new Response(JSON.stringify({ error: "Gemini API key not set in Vercel environment variables." }), { status: 500, headers });
+    return res.status(500).json({ 
+      error: "API key not set. Key names found: " + Object.keys(process.env).filter(k => k.includes("KEY") || k.includes("API")).join(", ")
+    });
   }
 
-  let body;
-  try {
-    body = await req.json();
-  } catch (e) {
-    return new Response(JSON.stringify({ error: "Invalid request body." }), { status: 400, headers });
+  let body = req.body;
+  if (typeof body === "string") {
+    try { body = JSON.parse(body); } 
+    catch (e) { return res.status(400).json({ error: "Invalid request body." }); }
   }
 
   const { answers } = body || {};
 
   if (!answers || !Array.isArray(answers) || answers.length !== 5) {
-    return new Response(JSON.stringify({ error: "Need exactly 5 answers." }), { status: 400, headers });
+    return res.status(400).json({ error: "Need exactly 5 answers." });
   }
 
   const prompt = `You are a purpose discovery mentor. Use simple everyday English.
 Framework: frustration = life assignment, gifts = innate equipment.
 Do not just summarise. Give real positioning strategy and next steps.
-Return ONLY raw JSON with no markdown, no backticks, no extra text whatsoever. Just the JSON object.
+Return ONLY raw JSON with no markdown, no backticks, no extra text whatsoever.
 
-Here are the five answers:
 Frustration: ${answers[0]}
 Gift: ${answers[1]}
 Energy: ${answers[2]}
@@ -58,20 +53,16 @@ Return exactly this JSON structure:
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 1200
-        }
+        generationConfig: { temperature: 0.7, maxOutputTokens: 1200 }
       })
     });
 
     if (!response.ok) {
       const errText = await response.text();
-      return new Response(JSON.stringify({ error: "Gemini API error " + response.status + ": " + errText }), { status: 500, headers });
+      return res.status(500).json({ error: "Gemini API error " + response.status + ": " + errText });
     }
 
     const data = await response.json();
-
     const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
     const clean = raw.replace(/```json/gi, "").replace(/```/g, "").trim();
 
@@ -79,12 +70,12 @@ Return exactly this JSON structure:
     try {
       result = JSON.parse(clean);
     } catch (e) {
-      return new Response(JSON.stringify({ error: "Could not parse AI response: " + clean.substring(0, 120) }), { status: 500, headers });
+      return res.status(500).json({ error: "Could not parse AI response: " + clean.substring(0, 120) });
     }
 
-    return new Response(JSON.stringify(result), { status: 200, headers });
+    return res.status(200).json(result);
 
   } catch (err) {
-    return new Response(JSON.stringify({ error: "Server error: " + err.message }), { status: 500, headers });
+    return res.status(500).json({ error: "Server error: " + err.message });
   }
-}
+};

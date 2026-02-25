@@ -1,4 +1,10 @@
 {
   "version": 2,
-  "outputDirectory": "public"
+  "outputDirectory": "public",
+  "functions": {
+    "api/analyze.js": {
+      "runtime": "@vercel/node@4.x"
+    }
+  }
 }
+
