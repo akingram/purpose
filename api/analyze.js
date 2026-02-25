@@ -16,10 +16,10 @@ export default async function handler(req) {
     return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405, headers });
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
 
   if (!apiKey) {
-    return new Response(JSON.stringify({ error: "API key not set in Vercel environment variables." }), { status: 500, headers });
+    return new Response(JSON.stringify({ error: "Gemini API key not set in Vercel environment variables." }), { status: 500, headers });
   }
 
   let body;
@@ -35,44 +35,51 @@ export default async function handler(req) {
     return new Response(JSON.stringify({ error: "Need exactly 5 answers." }), { status: 400, headers });
   }
 
-  const prompt = `Frustration: ${answers[0]}\nGift: ${answers[1]}\nEnergy: ${answers[2]}\nSoil: ${answers[3]}\nSeed: ${answers[4]}`;
-
-  const systemPrompt = `You are a purpose discovery mentor. Use simple everyday English.
+  const prompt = `You are a purpose discovery mentor. Use simple everyday English.
 Framework: frustration = life assignment, gifts = innate equipment.
-Do not summarise. Give real positioning strategy and next steps.
-Return ONLY this exact JSON structure with no markdown, no backticks, no extra text:
-{"coreIdentity":"write 2-3 sentences here","lifeAssignment":"write 2-3 sentences here","positioningStrategy":"write 3-4 sentences here","nextSteps":["step 1","step 2","step 3","step 4","step 5"]}`;
+Do not just summarise. Give real positioning strategy and next steps.
+Return ONLY raw JSON with no markdown, no backticks, no extra text whatsoever. Just the JSON object.
+
+Here are the five answers:
+Frustration: ${answers[0]}
+Gift: ${answers[1]}
+Energy: ${answers[2]}
+Soil: ${answers[3]}
+Seed: ${answers[4]}
+
+Return exactly this JSON structure:
+{"coreIdentity":"2-3 profound sentences about who they are at their core","lifeAssignment":"2-3 sentences about the specific problem they were built to solve","positioningStrategy":"3-4 sentences of concrete actionable advice for right now","nextSteps":["step 1","step 2","step 3","step 4","step 5"]}`;
 
   try {
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
+    const geminiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + apiKey;
+
+    const response = await fetch(geminiUrl, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01"
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 1200,
-        system: systemPrompt,
-        messages: [{ role: "user", content: prompt }]
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 1200
+        }
       })
     });
 
     if (!response.ok) {
       const errText = await response.text();
-      return new Response(JSON.stringify({ error: "Anthropic API error " + response.status + ": " + errText }), { status: 500, headers });
+      return new Response(JSON.stringify({ error: "Gemini API error " + response.status + ": " + errText }), { status: 500, headers });
     }
 
     const data = await response.json();
-    const raw = data.content.map(b => b.text || "").join("").trim();
+
+    const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
     const clean = raw.replace(/```json/gi, "").replace(/```/g, "").trim();
 
     let result;
     try {
       result = JSON.parse(clean);
     } catch (e) {
-      return new Response(JSON.stringify({ error: "Could not parse AI response: " + clean.substring(0, 100) }), { status: 500, headers });
+      return new Response(JSON.stringify({ error: "Could not parse AI response: " + clean.substring(0, 120) }), { status: 500, headers });
     }
 
     return new Response(JSON.stringify(result), { status: 200, headers });
